@@ -7,92 +7,121 @@ st.set_page_config(page_title="Gemi Yağcı Ordino & İkame Planlayıcı", layou
 
 GUNLER = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 
-st.title("🚢 Gemi Yağcı Ordino & İkame Planlayıcı (Boş Şablon)")
-st.markdown("Kendi verilerinizi girebileceğiniz boş Excel şablonunu indirebilir veya kendi dosyanızı yükleyebilirsiniz.")
+st.title("🚢 Gemi Yağcı Ordino & İkame Planlayıcı (Manuel Veri Girişi)")
+st.markdown("Verileri Excel yüklemeden, tamamen arayüz üzerinden elle girerek yönetebileceğiniz ve ordino planlayabileceğiniz sistem.")
 
-# --- KENAR ÇUBUĞU: EXCEL YÖNETİMİ ---
-st.sidebar.header("📁 Veri Yönetimi")
-uploaded_file = st.sidebar.file_uploader(
-    "Excel Dosyanızı Yükleyin (.xlsx)", 
-    type=["xlsx"],
-    help="Personel, Gemiler, Gemi_Makineleri, Vardiya_ve_Izin, Gemi_Gecmisi, Raporlar sayfalarını içeren dosya."
+# --- SESSION STATE (Verileri Hafızada Tutma) ---
+if "personel_df" not in st.session_state:
+    st.session_state.personel_df = pd.DataFrame(columns=["Ad_Soyad", "Sicil_No", "Statu", "Bildigi_Gemiler", "Vardiya_Gunleri", "Haftalik_Izin", "Vardiya_Tipi"])
+
+if "gemiler_df" not in st.session_state:
+    st.session_state.gemiler_df = pd.DataFrame(columns=["Gemi_Adi", "Makine_Bilgisi", "Konum"])
+
+if "vardiya_df" not in st.session_state:
+    st.session_state.vardiya_df = pd.DataFrame(columns=["Tarih", "Ad_Soyad", "Durum"])
+
+if "gemi_gecmisi_df" not in st.session_state:
+    st.session_state.gemi_gecmisi_df = pd.DataFrame(columns=["Ad_Soyad", "Gemi_Adi"])
+
+if "raporlar_df" not in st.session_state:
+    st.session_state.raporlar_df = pd.DataFrame(columns=["Ad_Soyad", "Gemi_Adi", "Rapor_Durumu"])
+
+# --- KENAR ÇUCUĞU: VERİ EKLEME PANELİ ---
+st.sidebar.header("📝 Manuel Veri Girişi")
+veri_tipi = st.sidebar.selectbox(
+    "Eklenecek Veri Türü", 
+    ["Personel Ekle", "Gemi Ekle", "Günlük Vardiya/İzin Durumu", "Gemi Geçmişi Ekle", "Rapor/Disiplin Ekle"]
 )
 
-# Tamamen Boş/Başlıkları Hazır Şablon Üretici
-def create_empty_template():
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        # 1. Personel Sayfası (Boş)
-        pd.DataFrame(columns=[
-            "Ad_Soyad", "Sicil_No", "Statu", "Bildigi_Gemiler", 
-            "Vardiya_Gunleri", "Haftalik_Izin", "Vardiya_Tipi"
-        ]).to_excel(writer, sheet_name="Personel", index=False)
+with st.sidebar.form(key="veri_giris_formu"):
+    if veri_tipi == "Personel Ekle":
+        st.subheader("Personel Tanımlama")
+        ad_soyad = st.text_input("Ad Soyad")
+        sicil_no = st.text_input("Sicil No")
+        statu = st.selectbox("Statü", ["Sabit", "İzinci", "8-5"])
+        bildigi_gemiler = st.text_input("Bildiği Gemiler (Virgülle ayırın, örn: Beykoz, Kadıköy)")
+        vardiya_gunleri = st.text_input("Çalıştığı Günler (örn: Pzt, Çar, Cum)")
+        haftalik_izin = st.selectbox("Haftalık İzin Günü", GUNLER)
+        vardiya_tipi = st.text_input("Vardiya Tipi (örn: 08-16 / Vardiyalı)")
+        
+        submit_btn = st.form_submit_button("Personeli Kaydet")
+        if submit_btn and ad_soyad:
+            yeni_satir = pd.DataFrame([{
+                "Ad_Soyad": ad_soyad, "Sicil_No": sicil_no, "Statu": statu,
+                "Bildigi_Gemiler": bildigi_gemiler, "Vardiya_Gunleri": vardiya_gunleri,
+                "Haftalik_Izin": haftalik_izin, "Vardiya_Tipi": vardiya_tipi
+            }])
+            st.session_state.personel_df = pd.concat([st.session_state.personel_df, yeni_satir], ignore_index=True)
+            st.sidebar.success(f"✅ {ad_soyad} eklendi!")
 
-        # 2. Gemi Makineleri Sayfası (Boş)
-        pd.DataFrame(columns=["Makine_Adi"]).to_excel(writer, sheet_name="Gemi_Makineleri", index=False)
+    elif veri_tipi == "Gemi Ekle":
+        st.subheader("Gemi Tanımlama")
+        gemi_adi = st.text_input("Gemi Adı")
+        makine_bilgisi = st.text_input("Makine Bilgisi (örn: MTU 16V)")
+        konum = st.text_input("Bulunduğu Konum / İskele")
+        
+        submit_btn = st.form_submit_button("Gemiye Kaydet")
+        if submit_btn and gemi_adi:
+            yeni_satir = pd.DataFrame([{"Gemi_Adi": gemi_adi, "Makine_Bilgisi": makine_bilgisi, "Konum": konum}])
+            st.session_state.gemiler_df = pd.concat([st.session_state.gemiler_df, yeni_satir], ignore_index=True)
+            st.sidebar.success(f"✅ {gemi_adi} gemisi eklendi!")
 
-        # 3. Gemiler Sayfası (Boş)
-        pd.DataFrame(columns=["Gemi_Adi", "Makine_Bilgisi", "Konum"]).to_excel(writer, sheet_name="Gemiler", index=False)
+    elif veri_tipi == "Günlük Vardiya/İzin Durumu":
+        st.subheader("Vardiya ve İzin Girişi")
+        p_listesi = st.session_state.personel_df["Ad_Soyad"].tolist() if not st.session_state.personel_df.empty else []
+        p_secilen = st.selectbox("Personel", p_listesi) if p_listesi else st.text_input("Personel Adı")
+        tarih = st.date_input("Tarih")
+        durum = st.selectbox("Durum", ["Müsait", "İzinli", "Vardiya Çıkışı", "Haftalık İzin"])
+        
+        submit_btn = st.form_submit_button("Durumu Kaydet")
+        if submit_btn and p_secilen:
+            yeni_satir = pd.DataFrame([{"Tarih": str(tarih), "Ad_Soyad": p_secilen, "Durum": durum}])
+            st.session_state.vardiya_df = pd.concat([st.session_state.vardiya_df, yeni_satir], ignore_index=True)
+            st.sidebar.success("✅ Günlük durum kaydedildi!")
 
-        # 4. Gemi Kaptan & Baş Makinist Bilgileri (Boş)
-        pd.DataFrame(columns=["Gemi_Adi", "Tarih", "Kaptan", "Bas_Makinist"]).to_excel(writer, sheet_name="Gemi_Kaptan_Bas_Mak", index=False)
+    elif veri_tipi == "Gemi Geçmişi Ekle":
+        st.subheader("Hangi Gemiye Gitti (Geçmiş Çalışma)")
+        p_listesi = st.session_state.personel_df["Ad_Soyad"].tolist() if not st.session_state.personel_df.empty else []
+        g_listesi = st.session_state.gemiler_df["Gemi_Adi"].tolist() if not st.session_state.gemiler_df.empty else []
+        
+        p_sec = st.selectbox("Personel", p_listesi) if p_listesi else st.text_input("Personel Adı")
+        g_sec = st.selectbox("Gemi", g_listesi) if g_listesi else st.text_input("Gemi Adı")
+        
+        submit_btn = st.form_submit_button("Geçmişi Kaydet")
+        if submit_btn and p_sec and g_sec:
+            yeni_satir = pd.DataFrame([{"Ad_Soyad": p_sec, "Gemi_Adi": g_sec}])
+            st.session_state.gemi_gecmisi_df = pd.concat([st.session_state.gemi_gecmisi_df, yeni_satir], ignore_index=True)
+            st.sidebar.success("✅ Gemi geçmişi işlendi!")
 
-        # 5. Vardiya ve İzin Durumları (Boş)
-        pd.DataFrame(columns=["Tarih", "Ad_Soyad", "Durum"]).to_excel(writer, sheet_name="Vardiya_ve_Izin", index=False)
-
-        # 6. Gemi Geçmişi (Boş)
-        pd.DataFrame(columns=["Ad_Soyad", "Gemi_Adi"]).to_excel(writer, sheet_name="Gemi_Gecmisi", index=False)
-
-        # 7. Rapor / Disiplin Cezası Tablosu (Boş)
-        pd.DataFrame(columns=["Ad_Soyad", "Gemi_Adi", "Rapor_Durumu"]).to_excel(writer, sheet_name="Raporlar", index=False)
-
-    return output.getvalue()
-
-st.sidebar.download_button(
-    label="📥 Boş Excel Şablonunu İndir",
-    data=create_empty_template(),
-    file_name="bos_ordino_sablonu.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-
-# --- VERİLERİ OKUMA ---
-@st.cache_data
-def load_data(file_buffer):
-    p_df = pd.read_excel(file_buffer, sheet_name="Personel")
-    g_df = pd.read_excel(file_buffer, sheet_name="Gemiler")
-    m_df = pd.read_excel(file_buffer, sheet_name="Gemi_Makineleri")
-    v_df = pd.read_excel(file_buffer, sheet_name="Vardiya_ve_Izin")
-    gec_df = pd.read_excel(file_buffer, sheet_name="Gemi_Gecmisi")
-    rap_df = pd.read_excel(file_buffer, sheet_name="Raporlar")
-    return p_df, g_df, m_df, v_df, gec_df, rap_df
-
-if uploaded_file is not None:
-    try:
-        personel_df, gemiler_df, makineler_df, vardiya_df, gemi_gecmisi_df, raporlar_df = load_data(uploaded_file)
-        st.sidebar.success("✅ Excel dosyanız başarıyla yüklendi!")
-    except Exception as e:
-        st.sidebar.error(f"Excel sayfaları okunurken hata oluştu (Doğru sayfa isimlerinin olduğundan emin olun): {e}")
-        st.stop()
-else:
-    # Yüklenmediyse tamamen boş şablon ile başla
-    empty_buffer = create_empty_template()
-    personel_df, gemiler_df, makineler_df, vardiya_df, gemi_gecmisi_df, raporlar_df = load_data(io.BytesIO(empty_buffer))
-    st.sidebar.warning("⚠️ Lütfen kendi Excel dosyanızı yükleyin veya yukarıdan boş şablonu indirip doldurarak yükleyin.")
+    elif veri_tipi == "Rapor/Disiplin Ekle":
+        st.subheader("Kaptan / Baş Makinist Raporu")
+        p_listesi = st.session_state.personel_df["Ad_Soyad"].tolist() if not st.session_state.personel_df.empty else []
+        g_listesi = st.session_state.gemiler_df["Gemi_Adi"].tolist() if not st.session_state.gemiler_df.empty else []
+        
+        p_sec = st.selectbox("Personel", p_listesi) if p_listesi else st.text_input("Personel Adı")
+        g_sec = st.selectbox("Gemi", g_listesi) if g_listesi else st.text_input("Gemi Adı")
+        rapor_durumu = st.selectbox("Rapor Durumu", ["Yok", "Var (Disiplin/Rapor Yemiş)"])
+        
+        submit_btn = st.form_submit_button("Raporu Kaydet")
+        if submit_btn and p_sec and g_sec:
+            yeni_satir = pd.DataFrame([{"Ad_Soyad": p_sec, "Gemi_Adi": g_sec, "Rapor_Durumu": rapor_durumu}])
+            st.session_state.raporlar_df = pd.concat([st.session_state.raporlar_df, yeni_satir], ignore_index=True)
+            st.sidebar.success("✅ Rapor kaydı işlendi!")
 
 # --- ÖNERİ ALGORİTMASI ---
 def en_uygun_adaylari_bul(hedef_gemi, tarih_str):
-    if personel_df.empty:
+    if st.session_state.personel_df.empty:
         return pd.DataFrame(), ""
         
     secilen_tarih = datetime.strptime(tarih_str, "%Y-%m-%d")
     gun_adi = GUNLER[secilen_tarih.weekday()]
     
-    gemi_row = gemiler_df[gemiler_df["Gemi_Adi"].astype(str) == hedef_gemi]
+    gemi_row = st.session_state.gemiler_df[st.session_state.gemiler_df["Gemi_Adi"].astype(str) == hedef_gemi]
     gemi_makinesi = gemi_row.iloc[0]["Makine_Bilgisi"] if not gemi_row.empty else "Tanımsız"
 
     adaylar = []
 
-    for _, row in personel_df.iterrows():
+    for _, row in st.session_state.personel_df.iterrows():
         ad = str(row["Ad_Soyad"])
         statu = str(row["Statu"])
         haftalik_izin = str(row["Haftalik_Izin"]).strip()
@@ -102,10 +131,10 @@ def en_uygun_adaylari_bul(hedef_gemi, tarih_str):
             continue
 
         # 2. KURAL: O gemiyi bilmiş olacak (Daha önce o gemide çalışmış mı?)
-        daha_once_calisti_mi = not gemi_gecmisi_df[
-            (gemi_gecmisi_df["Ad_Soyad"].astype(str) == ad) & 
-            (gemi_gecmisi_df["Gemi_Adi"].astype(str).str.lower() == hedef_gemi.lower())
-        ].empty if not gemi_gecmisi_df.empty else False
+        daha_once_calisti_mi = not st.session_state.gemi_gecmisi_df[
+            (st.session_state.gemi_gecmisi_df["Ad_Soyad"].astype(str) == ad) & 
+            (st.session_state.gemi_gecmisi_df["Gemi_Adi"].astype(str).str.lower() == hedef_gemi.lower())
+        ].empty if not st.session_state.gemi_gecmisi_df.empty else False
 
         if not daha_once_calisti_mi:
             continue
@@ -115,7 +144,11 @@ def en_uygun_adaylari_bul(hedef_gemi, tarih_str):
             continue
 
         # 4. KURAL: Günlük Durum Kontrolü (İzinde veya Vardiya Çıkışında olmayacak)
-        gunluk_kayit = vardiya_df[(vardiya_df["Ad_Soyad"].astype(str) == ad) & (vardiya_df["Tarih"].astype(str) == tarih_str)] if not vardiya_df.empty else pd.DataFrame()
+        gunluk_kayit = st.session_state.vardiya_df[
+            (st.session_state.vardiya_df["Ad_Soyad"].astype(str) == ad) & 
+            (st.session_state.vardiya_df["Tarih"].astype(str) == tarih_str)
+        ] if not st.session_state.vardiya_df.empty else pd.DataFrame()
+        
         durum = "Müsait"
         if not gunluk_kayit.empty:
             durum = str(gunluk_kayit.iloc[0]["Durum"])
@@ -123,11 +156,11 @@ def en_uygun_adaylari_bul(hedef_gemi, tarih_str):
                 continue
 
         # 5. KURAL: Kaptan ya da Baş Makinitten Rapor / Cezası Olmayacak
-        ceza_var_mi = not raporlar_df[
-            (raporlar_df["Ad_Soyad"].astype(str) == ad) & 
-            (raporlar_df["Gemi_Adi"].astype(str).str.lower() == hedef_gemi.lower()) &
-            (raporlar_df["Rapor_Durumu"].astype(str).str.lower() != "yok")
-        ].empty if not raporlar_df.empty else False
+        ceza_var_mi = not st.session_state.raporlar_df[
+            (st.session_state.raporlar_df["Ad_Soyad"].astype(str) == ad) & 
+            (st.session_state.raporlar_df["Gemi_Adi"].astype(str).str.lower() == hedef_gemi.lower()) &
+            (st.session_state.raporlar_df["Rapor_Durumu"].astype(str).str.lower().str.contains("var"))
+        ].empty if not st.session_state.raporlar_df.empty else False
 
         if ceza_var_mi:
             continue
@@ -167,88 +200,80 @@ def en_uygun_adaylari_bul(hedef_gemi, tarih_str):
         sonuc_df = sonuc_df.sort_values(by="Uygunluk Puanı", ascending=False).head(4)
     return sonuc_df, gemi_makinesi
 
-# --- ARAYÜZ ---
-if personel_df.empty:
-  st.info("👈 Başlamak için sol menüden boş şablonu indirip doldurun ve Excel dosyanızı yükleyin.")
+# --- ANA EKRAN: ORDNIO PLANLAMA ---
+if st.session_state.personel_df.empty or st.session_state.gemiler_df.empty:
+  st.info("👈 Başlamak için sol menüyü kullanarak en az bir **Personel** ve bir **Gemi** kaydı ekleyin.")
 else:
   col1, col2 = st.columns([1, 2])
 
   with col1:
       st.subheader("1. İzin / Eksik Bilgisi")
-      personel_listesi = personel_df["Ad_Soyad"].tolist() if "Ad_Soyad" in personel_df.columns else []
-      gemi_listesi = gemiler_df["Gemi_Adi"].tolist() if "Gemi_Adi" in gemiler_df.columns else []
+      personel_listesi = st.session_state.personel_df["Ad_Soyad"].tolist()
+      gemi_listesi = st.session_state.gemiler_df["Gemi_Adi"].tolist()
       
-      if not personel_listesi or not gemi_listesi:
-          st.warning("Personel veya Gemi listesi boş. Lütfen Excel dosyasına veri ekleyin.")
-      else:
-          izinli_kisi = st.selectbox("İzin Alan Personel", personel_listesi)
-          kisi_bilgi = personel_df[personel_df["Ad_Soyad"] == izinli_kisi].iloc[0]
-          
-          hedef_gemi = st.selectbox("İzin Alınan Gemi", gemi_listesi)
-          plan_tarihi = st.date_input("Planlama Tarihi", value=datetime.now())
-          
-          st.info(f"**Sicil No:** {kisi_bilgi.get('Sicil_No', '-') } | **Statü:** {kisi_bilgi.get('Statu', '-') }")
+      izinli_kisi = st.selectbox("İzin Alan Personel", personel_listesi)
+      kisi_bilgi = st.session_state.personel_df[st.session_state.personel_df["Ad_Soyad"] == izinli_kisi].iloc[0]
+      
+      hedef_gemi = st.selectbox("İzin Alınan Gemi", gemi_listesi)
+      plan_tarihi = st.date_input("Planlama Tarihi", value=datetime.now())
+      
+      st.info(f"**Sicil No:** {kisi_bilgi['Sicil_No']} | **Statü:** {kisi_bilgi['Statu']}")
 
   with col2:
       st.subheader("2. Kurallara Uygun En İyi 4 İkame Adayı")
       if st.button("Adayları Filtrele ve Listele", type="primary"):
-          if personel_df.empty or gemiler_df.empty:
-              st.error("Veri tabanları boş! Lütfen verilerinizi kontrol edin.")
+          oneriler, gemi_makinesi = en_uygun_adaylari_bul(
+              hedef_gemi=hedef_gemi,
+              tarih_str=plan_tarihi.strftime("%Y-%m-%d")
+          )
+          
+          st.write(f"⚙️ **Gemi Makine Altyapısı:** {gemi_makinesi}")
+          
+          if oneriler.empty:
+              st.error("Kriterlere uyan uygun personel bulunamadı! (Personelin daha önce o gemide çalışmış olması, cezası olmaması ve o gün izinli/hafta izinli olmaması gerekir).")
           else:
-              oneriler, gemi_makinesi = en_uygun_adaylari_bul(
-                  hedef_gemi=hedef_gemi,
-                  tarih_str=plan_tarihi.strftime("%Y-%m-%d")
-              )
-              
-              st.write(f"⚙️ **Gemi Makine Altyapısı:** {gemi_makinesi}")
-              
-              if oneriler.empty:
-                  st.error("Kriterlere uyan uygun personel bulunamadı! (Personelin geçmişte o gemide çalışmış olması, cezası olmaması ve o gün izinli/hafta izinli olmaması gerekir).")
-              else:
-                  st.success(f"**{hedef_gemi}** gemisi için en uygun {len(oneriler)} aday:")
-                  st.dataframe(oneriler, use_container_width=True, hide_index=True)
+              st.success(f"**{hedef_gemi}** gemisi için en uygun {len(oneriler)} aday:")
+              st.dataframe(oneriler, use_container_width=True, hide_index=True)
 
-                  st.markdown("---")
-                  st.subheader("3. Ordino Onayı ve Rapor İndir")
-                  secilen_ikame = st.selectbox("Görevlendirilecek Personel:", oneriler["Personel"].tolist())
+              st.markdown("---")
+              st.subheader("3. Ordino Onayı ve Excel Raporu")
+              secilen_ikame = st.selectbox("Görevlendirilecek Personel:", oneriler["Personel"].tolist())
+              
+              if st.button("Ordinoyu Onayla ve Excel İndir"):
+                  output = io.BytesIO()
+                  with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                      rapor_df = pd.DataFrame([{
+                          "Tarih": plan_tarihi.strftime("%Y-%m-%d"),
+                          "İzin Alan": izinli_kisi,
+                          "Gemi": hedef_gemi,
+                          "Makine": gemi_makinesi,
+                          "Atanan İkame": secilen_ikame,
+                          "Onay Durumu": "Kesinleşti"
+                      }])
+                      rapor_df.to_excel(writer, sheet_name="Atama_Sonucu", index=False)
+                      oneriler.to_excel(writer, sheet_name="Uygun_Adaylar", index=False)
+                      st.session_state.personel_df.to_excel(writer, sheet_name="Guncel_Personel", index=False)
                   
-                  if st.button("Ordinoyu Onayla ve Excel İndir"):
-                      output = io.BytesIO()
-                      with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                          rapor_df = pd.DataFrame([{
-                              "Tarih": plan_tarihi.strftime("%Y-%m-%d"),
-                              "İzin Alan": izinli_kisi,
-                              "Gemi": hedef_gemi,
-                              "Makine": gemi_makinesi,
-                              "Atanan İkame": secilen_ikame,
-                              "Onay Durumu": "Kesinleşti"
-                          }])
-                          rapor_df.to_excel(writer, sheet_name="Atama_Sonucu", index=False)
-                          oneriler.to_excel(writer, sheet_name="Uygun_Adaylar", index=False)
-                          personel_df.to_excel(writer, sheet_name="Guncel_Personel", index=False)
-                      
-                      processed_data = output.getvalue()
-                      
-                      st.download_button(
-                          label="📥 Ordino Excel Raporunu İndir (.xlsx)",
-                          data=processed_data,
-                          file_name=f"Ordino_{plan_tarihi.strftime('%Y%m%d')}_{hedef_gemi}.xlsx",
-                          mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                      )
-                      st.success(f"✅ {secilen_ikame}, {hedef_gemi} gemisi için başarıyla atandı!")
+                  processed_data = output.getvalue()
+                  
+                  st.download_button(
+                      label="📥 Ordino Excel Raporunu İndir (.xlsx)",
+                      data=processed_data,
+                      file_name=f"Ordino_{plan_tarihi.strftime('%Y%m%d')}_{hedef_gemi}.xlsx",
+                      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  )
+                  st.success(f"✅ {secilen_ikame}, {hedef_gemi} gemisi için başarıyla atandı!")
 
 st.divider()
-with st.expander("📊 Yüklü Tabloları İncele"):
-    t1, t2, t3, t4, t5, t6 = st.tabs(["Personel", "Gemiler & Makineler", "Vardiya ve İzin", "Gemi Geçmişi", "Raporlar/Cezalar", "Kaptan/Baş Makinist"])
+with st.expander("📊 Girilen Tüm Verileri İncele"):
+    t1, t2, t3, t4, t5 = st.tabs(["Personel Listesi", "Gemiler", "Vardiya ve İzin", "Gemi Geçmişi", "Raporlar"])
     with t1:
-        st.dataframe(personel_df, use_container_width=True)
+        st.dataframe(st.session_state.personel_df, use_container_width=True)
     with t2:
-        st.dataframe(gemiler_df, use_container_width=True)
+        st.dataframe(st.session_state.gemiler_df, use_container_width=True)
     with t3:
-        st.dataframe(vardiya_df, use_container_width=True)
+        st.dataframe(st.session_state.vardiya_df, use_container_width=True)
     with t4:
-        st.dataframe(gemi_gecmisi_df, use_container_width=True)
+        st.dataframe(st.session_state.gemi_gecmisi_df, use_container_width=True)
     with t5:
-        st.dataframe(raporlar_df, use_container_width=True)
-    with t6:
-        st.dataframe(gemiler_df, use_container_width=True)
+        st.dataframe(st.session_state.raporlar_df, use_container_width=True)
