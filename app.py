@@ -13,7 +13,6 @@ st.set_page_config(page_title="Gemi Yağcı Ordino & İkame Planlayıcı", layou
 # =====================================================================
 GUNLER = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 STATULER = ["Sabit", "İzinci", "8-5"]
-VARDIYA_TIPLERI = ["08-16 Sabit", "08-17 Sabit", "Vardiyalı / Posta", "8-5"]
 GUNLUK_DURUMLAR = ["Müsait", "İzinli", "Vardiya Çıkışı", "Haftalık İzin"]
 
 VARSAYILAN_MAKINELER = ["MTU 16V", "Caterpillar 3512", "Baudouin 12M", "Wartsila 6L20"]
@@ -24,7 +23,7 @@ DOSYA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ordino_veri.js
 SEMA = {
     "gemiler_df": ["Gemi_Adi", "Makine_Bilgisi", "Konum"],
     "gemi_kadro_df": ["Gemi_Adi", "Gun", "Kaptan", "Bas_Makinist"],
-    "personel_df": ["Sicil_No", "Ad_Soyad", "Statu", "Bildigi_Gemiler", "Vardiya_Gunleri", "Haftalik_Izin", "Vardiya_Tipi"],
+    "personel_df": ["Sicil_No", "Ad_Soyad", "Statu", "Bildigi_Gemiler", "Vardiya_Gunleri", "Haftalik_Izin"],
     "izinler_df": ["Ad_Soyad", "Baslangic", "Bitis"],
     "vardiya_df": ["Tarih", "Ad_Soyad", "Durum"],
     "atamalar_df": ["Tarih", "Ikame", "Gemi", "Izin_Alan"],
@@ -211,7 +210,7 @@ def adaylari_bul(hedef_gemi, bas, bit, izin_alan):
             acik.append("Gemiyi bilmiyor, aynı makineli gemiyi biliyor (-50)")
         return {
             "Personel": ad, "Sicil No": p["Sicil_No"], "Statü": statu,
-            "Vardiya Tipi": p["Vardiya_Tipi"], "Kademe": kademe,
+            "Kademe": kademe,
             "Uygunluk Puanı": puan, "Nedenler": " | ".join(acik) if acik else "-",
         }
 
@@ -257,11 +256,14 @@ def excel_olustur(atama_df, oneriler, elenenler):
     return cikti.getvalue()
 
 
-def tablo_duzenle(ad, anahtar_kolon, column_config=None):
+def tablo_duzenle(ad, anahtar_kolon, column_config=None, bos_none=()):
     """Düzenlenebilir tablo: satır ekle/sil/düzelt + kaydet."""
     surum = ss.get(f"surum_{ad}", 0)
+    goster = ss[ad].copy()
+    for k in bos_none:
+        goster[k] = goster[k].map(lambda v: v if str(v).strip() else None)
     duzenlenen = st.data_editor(
-        ss[ad], num_rows="dynamic", hide_index=True,
+        goster, num_rows="dynamic", hide_index=True,
         key=f"edit_{ad}_{surum}", column_config=column_config or {},
     )
     if st.button("💾 Değişiklikleri Kaydet", key=f"kaydet_btn_{ad}"):
@@ -275,6 +277,33 @@ def tablo_duzenle(ad, anahtar_kolon, column_config=None):
         ss[ad] = yeni.reset_index(drop=True)
         kaydet()
         ss[f"surum_{ad}"] = surum + 1
+        st.rerun()
+
+
+def sil_ui(ad, bos_mesaj="Kayıt yok."):
+    """Tabloyu gösterir, işaretlenen satırları siler (personel silinirse izin/durum/rapor kayıtları da silinir)."""
+    df = ss[ad]
+    if df.empty:
+        st.caption(bos_mesaj)
+        return
+    surum = ss.get(f"surum_{ad}", 0)
+    goster = df.copy()
+    goster.insert(0, "Sil", False)
+    duz = st.data_editor(
+        goster, hide_index=True, key=f"silduz_{ad}_{surum}",
+        column_config={"Sil": st.column_config.CheckboxColumn("Sil", default=False)},
+        disabled=[c for c in goster.columns if c != "Sil"],
+    )
+    secili = duz.index[duz["Sil"]].tolist()
+    if st.button(f"🗑️ Seçilenleri Sil ({len(secili)})", key=f"silbtn_{ad}", disabled=not secili):
+        silinen_adlar = df.loc[secili, "Ad_Soyad"].tolist() if ad == "personel_df" else []
+        ss[ad] = df.drop(index=secili).reset_index(drop=True)
+        if ad == "personel_df" and silinen_adlar:
+            for diger in ("izinler_df", "vardiya_df", "raporlar_df"):
+                ss[diger] = ss[diger][~ss[diger]["Ad_Soyad"].isin(silinen_adlar)].reset_index(drop=True)
+                ss[f"surum_{diger}"] = ss.get(f"surum_{diger}", 0) + 1
+        ss[f"surum_{ad}"] = surum + 1
+        kaydet()
         st.rerun()
 
 
@@ -313,7 +342,7 @@ with sekme_ordino:
             ikinci_kademe = st.checkbox(
                 "Gemiyi bilen çıkmazsa aynı makineli gemiyi bilenleri öner", value=True, key="o_ikinci"
             )
-            st.info(f"**Sicil:** {kisi['Sicil_No']} | **Statü:** {kisi['Statu']} | **Hafta İzni:** {kisi['Haftalik_Izin']}")
+            st.info(f"**Sicil:** {kisi['Sicil_No']} | **Statü:** {kisi['Statu']} | **Hafta İzni:** {kisi['Haftalik_Izin'] or '-'}")
 
         with c2:
             st.subheader("2. Kurallara Göre En Uygun 4 İkame Adayı")
@@ -409,15 +438,18 @@ with sekme_personel:
     if not gemi_secenekleri:
         st.info("Personel eklemeden önce en az bir gemi tanımlayın (Gemiler & Kadro sekmesi).")
     else:
+        statu = st.selectbox("Statü / Vardiya Tipi", STATULER, key="p_statu")
         with st.form("personel_formu", clear_on_submit=True):
             a, b = st.columns(2)
             ad_soyad = a.text_input("Ad Soyad")
             sicil_no = b.text_input("Sicil No")
-            statu = a.selectbox("Statü", STATULER)
-            vardiya_tipi = b.selectbox("Vardiya Tipi", VARDIYA_TIPLERI)
             bildigi = st.multiselect("Bildiği Gemiler", gemi_secenekleri)
-            vardiya_gunleri = st.multiselect("Vardiya (Çalışma) Günleri", GUNLER, default=GUNLER[:5])
-            haftalik_izin = st.selectbox("Haftaizni Günü", GUNLER, index=6)
+            if statu == "İzinci":
+                st.caption("İzinci personel için vardiya günü ve haftaizni gerekmez.")
+                vardiya_gunleri, haftalik_izin = [], ""
+            else:
+                vardiya_gunleri = st.multiselect("Vardiya (Çalışma) Günleri", GUNLER, default=GUNLER[:5])
+                haftalik_izin = st.selectbox("Haftaizni Günü", GUNLER, index=6)
             if st.form_submit_button("Personeli Kaydet"):
                 ad_soyad, sicil_no = ad_soyad.strip(), sicil_no.strip()
                 if not ad_soyad or not sicil_no:
@@ -430,7 +462,7 @@ with sekme_personel:
                     satir_ekle("personel_df", {
                         "Sicil_No": sicil_no, "Ad_Soyad": ad_soyad, "Statu": statu,
                         "Bildigi_Gemiler": ", ".join(bildigi), "Vardiya_Gunleri": ", ".join(vardiya_gunleri),
-                        "Haftalik_Izin": haftalik_izin, "Vardiya_Tipi": vardiya_tipi,
+                        "Haftalik_Izin": haftalik_izin,
                     })
                     st.success(f"Personel kaydedildi: {ad_soyad}")
                     st.rerun()
@@ -439,7 +471,7 @@ with sekme_personel:
         sablon = pd.DataFrame([{
             "Sicil_No": "1001", "Ad_Soyad": "Örnek Kişi", "Statu": "İzinci",
             "Bildigi_Gemiler": "Gemi A, Gemi B", "Vardiya_Gunleri": "Pazartesi, Salı, Çarşamba",
-            "Haftalik_Izin": "Pazar", "Vardiya_Tipi": "08-17 Sabit",
+            "Haftalik_Izin": "Pazar",
         }])
         sb = io.BytesIO()
         sablon.to_excel(sb, index=False)
@@ -455,7 +487,7 @@ with sekme_personel:
                     eklenen, atlanan = 0, 0
                     for r in ex[SEMA["personel_df"]].to_dict("records"):
                         r = {k: str(v).strip() for k, v in r.items()}
-                        if (not r["Ad_Soyad"] or not r["Sicil_No"]
+                        if (not r["Ad_Soyad"] or not r["Sicil_No"] or r["Statu"] not in STATULER
                                 or r["Sicil_No"] in ss.personel_df["Sicil_No"].astype(str).tolist()
                                 or r["Ad_Soyad"] in ss.personel_df["Ad_Soyad"].tolist()):
                             atlanan += 1
@@ -467,9 +499,9 @@ with sekme_personel:
             except Exception as e:
                 st.error(f"Dosya okunamadı: {e}")
 
-    st.subheader("Personel Listesi")
-    st.dataframe(ss.personel_df, hide_index=True)
-    st.caption("Düzenlemek/silmek için 'Atamalar & Veri' sekmesini kullanın.")
+    st.subheader("Personel Listesi (silmek için 'Sil' kutusunu işaretleyin)")
+    sil_ui("personel_df", "Henüz personel yok.")
+    st.caption("Düzeltme için 'Atamalar & Veri' sekmesini kullanın.")
 
 # ---------------------------------------------------------------------
 # 3) GEMİLER & KADRO
@@ -478,21 +510,27 @@ with sekme_gemi:
     g1, g2 = st.columns(2)
     with g1:
         st.subheader("Gemi Ekle")
-        if not ss.makineler_listesi or not ss.iskeleler_listesi:
-            st.info("Önce Tanımlar sekmesinden makine ve iskele ekleyin.")
+        if not ss.iskeleler_listesi:
+            st.info("Önce Tanımlar sekmesinden iskele ekleyin.")
         else:
             with st.form("gemi_formu", clear_on_submit=True):
                 gemi_adi = st.text_input("Gemi Adı")
-                makine_secimi = st.selectbox("Makine Bilgisi", ss.makineler_listesi)
+                makine_secimi = st.selectbox("Makine Bilgisi", ss.makineler_listesi) if ss.makineler_listesi else None
+                yeni_makine = st.text_input("Listede yoksa yeni makine adı (isteğe bağlı)")
                 konum = st.selectbox("Gemi Nerede (Konum / İskele)", ss.iskeleler_listesi)
                 if st.form_submit_button("Gemiyi Kaydet"):
-                    gemi_adi = gemi_adi.strip()
+                    gemi_adi, yeni_makine = gemi_adi.strip(), yeni_makine.strip()
+                    makine_final = yeni_makine or makine_secimi
                     if not gemi_adi:
                         st.error("Gemi adı zorunludur.")
+                    elif not makine_final:
+                        st.error("Bir makine seçin veya yeni makine adı yazın.")
                     elif gemi_adi.casefold() in [x.casefold() for x in ss.gemiler_df["Gemi_Adi"].tolist()]:
                         st.error("Bu gemi zaten kayıtlı.")
                     else:
-                        satir_ekle("gemiler_df", {"Gemi_Adi": gemi_adi, "Makine_Bilgisi": makine_secimi, "Konum": konum})
+                        if makine_final not in ss.makineler_listesi:
+                            ss.makineler_listesi.append(makine_final)
+                        satir_ekle("gemiler_df", {"Gemi_Adi": gemi_adi, "Makine_Bilgisi": makine_final, "Konum": konum})
                         st.success(f"Gemi eklendi: {gemi_adi}")
                         st.rerun()
     with g2:
@@ -519,8 +557,8 @@ with sekme_gemi:
 
     st.subheader("Gemiler")
     st.dataframe(ss.gemiler_df, hide_index=True)
-    st.subheader("Gemi Kadrosu (gün bazlı)")
-    st.dataframe(ss.gemi_kadro_df, hide_index=True)
+    st.subheader("Gemi Kadrosu: Kaptan / Baş Makinist (silmek için işaretleyin)")
+    sil_ui("gemi_kadro_df", "Henüz kadro kaydı yok.")
 
 # ---------------------------------------------------------------------
 # 4) İZİN / GÜNLÜK DURUM
@@ -560,10 +598,10 @@ with sekme_izin:
                     kaydet()
                     st.success("Günlük durum işlendi.")
                     st.rerun()
-        st.subheader("Planlı İzinler")
-        st.dataframe(ss.izinler_df, hide_index=True)
-        st.subheader("Günlük Durum Kayıtları")
-        st.dataframe(ss.vardiya_df, hide_index=True)
+        st.subheader("Planlı İzinler (silmek için işaretleyin)")
+        sil_ui("izinler_df", "Planlı izin yok.")
+        st.subheader("Günlük Durum Kayıtları (silmek için işaretleyin)")
+        sil_ui("vardiya_df", "Günlük durum kaydı yok.")
 
 # ---------------------------------------------------------------------
 # 5) RAPORLAR
@@ -586,7 +624,7 @@ with sekme_rapor:
                     satir_ekle("raporlar_df", {"Ad_Soyad": rp, "Rapor_Veren": rv.strip(), "Aciklama": ra.strip()})
                     st.success("Rapor kaydı işlendi.")
                     st.rerun()
-    st.dataframe(ss.raporlar_df, hide_index=True)
+    sil_ui("raporlar_df", "Rapor kaydı yok.")
 
 # ---------------------------------------------------------------------
 # 6) ATAMALAR & VERİ (düzenle / sil)
@@ -595,18 +633,17 @@ with sekme_veri:
     st.caption("Tabloları düzeltin, satır ekleyin/silin (satırı seçip Delete). "
                "Not: gemi veya personel adını değiştirirseniz diğer tablolardaki eski adları da güncelleyin.")
     gemi_secim = ss.gemiler_df["Gemi_Adi"].tolist()
-    with st.expander("Atamalar", expanded=True):
-        tablo_duzenle("atamalar_df", "Ikame", {"Tarih": st.column_config.DateColumn(format="DD.MM.YYYY")})
+    with st.expander("Atamalar (silmek için işaretleyin)", expanded=True):
+        sil_ui("atamalar_df", "Henüz atama yok.")
     with st.expander("Personel"):
         tablo_duzenle("personel_df", "Ad_Soyad", {
             "Statu": st.column_config.SelectboxColumn(options=STATULER),
             "Haftalik_Izin": st.column_config.SelectboxColumn(options=GUNLER),
-            "Vardiya_Tipi": st.column_config.SelectboxColumn(options=VARDIYA_TIPLERI),
-        })
+        }, bos_none=["Haftalik_Izin"])
     with st.expander("Gemiler"):
         tablo_duzenle("gemiler_df", "Gemi_Adi", {
-            "Makine_Bilgisi": st.column_config.SelectboxColumn(options=ss.makineler_listesi),
-            "Konum": st.column_config.SelectboxColumn(options=ss.iskeleler_listesi),
+            "Makine_Bilgisi": st.column_config.SelectboxColumn(options=sorted(set(ss.makineler_listesi) | set(ss.gemiler_df["Makine_Bilgisi"]))),
+            "Konum": st.column_config.SelectboxColumn(options=sorted(set(ss.iskeleler_listesi) | set(ss.gemiler_df["Konum"]))),
         })
     with st.expander("Gemi Kadrosu"):
         tablo_duzenle("gemi_kadro_df", "Gemi_Adi", {"Gun": st.column_config.SelectboxColumn(options=GUNLER)})
@@ -640,7 +677,7 @@ with sekme_tanim:
                         kaydet()
                         st.rerun()
             silinecek = st.multiselect("Silinecekler", ss[anahtar], key=f"sil_{anahtar}")
-            if silinecek and st.button("Seçilenleri Sil", key=f"silbtn_{anahtar}"):
+            if silinecek and st.button("🗑️ Seçilenleri Sil", key=f"silbtn_{anahtar}"):
                 ss[anahtar] = [x for x in ss[anahtar] if x not in silinecek]
                 kaydet()
                 st.rerun()
