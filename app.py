@@ -193,4 +193,28 @@ with col2:
                         "Görev Yeri (Gemi)": hedef_gemi,
                         "Makine Tipi": gemi_makinesi,
                         "Atanan İkame Personel": secilen_ikame,
-                        "Dur
+                        "Durum": "Onaylandı"
+                    }])
+                    rapor_df.to_excel(writer, sheet_name="Atama_Sonucu", index=False)
+                    oneriler.to_excel(writer, sheet_name="Aday_Degerlendirme_Listesi", index=False)
+                    personel_df.to_excel(writer, sheet_name="Guncel_Personel", index=False)
+                
+                processed_data = output.getvalue()
+                
+                st.download_button(
+                    label="📥 Excel Raporunu İndir (.xlsx)",
+                    data=processed_data,
+                    file_name=f"Ordino_Raporu_{plan_tarihi.strftime('%Y%m%d')}_{hedef_gemi}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                st.success(f"✅ {secilen_ikame}, {hedef_gemi} gemisi için başarıyla atandı ve rapor hazırlandı!")
+
+st.divider()
+with st.expander("📊 Yüklü Veri Tablolarını İncele"):
+    t1, t2, t3 = st.tabs(["Personel Listesi", "Günlük Vardiya & İzin", "Geçmiş Gemi Çekilme"])
+    with t1:
+        st.dataframe(personel_df, use_container_width=True)
+    with t2:
+        st.dataframe(vardiya_df, use_container_width=True)
+    with t3:
+        st.dataframe(gecmis_df, use_container_width=True)
