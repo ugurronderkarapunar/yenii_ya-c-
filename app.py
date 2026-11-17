@@ -58,7 +58,7 @@ st.sidebar.download_button(
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-# --- VERİLERİ OKUMA (Yüklenen dosya yoksa varsayılan şablonu kullanır) ---
+# --- VERİLERİ OKUMA ---
 @st.cache_data
 def load_data_from_buffer(file_buffer):
     p_df = pd.read_excel(file_buffer, sheet_name="Personel")
@@ -74,12 +74,11 @@ if uploaded_file is not None:
         st.sidebar.error(f"Hata: Excel sayfaları okunamadı. ('Personel', 'Vardiya_ve_Izin', 'Gecmis_Cekilme' sayfaları olduğundan emin olun)\n{e}")
         st.stop()
 else:
-    # Varsayılan örnek veriyi yükle
     default_buffer = create_sample_excel()
     personel_df, vardiya_df, gecmis_df = load_data_from_buffer(io.BytesIO(default_buffer))
-    st.sidebar.info("💡 Kendi Excel dosyanızı yüklemediğiniz için örnek verilerle çalışılıyor.")
+    st.sidebar.info("💡 Örnek verilerle çalışılıyor (kendi dosyanızı yükleyebilirsiniz).")
 
-# --- ALGORİTMA: EN UYGUN 4 ADAYI BUL ---
+# --- ALGORİTMA: EN UYGUN 4 ADAYI BUL (Parametreler sabitlendi) ---
 def en_uygun_adaylari_bul(hedef_gemi, gerekli_makine, tarih_str):
     secilen_tarih = datetime.strptime(tarih_str, "%Y-%m-%d")
     gun_adi = GUNLER[secilen_tarih.weekday()]
@@ -165,6 +164,7 @@ with col1:
 with col2:
     st.subheader("2. Önerilen En Uygun 4 Aday")
     if st.button("Uygun Personelleri Bul", type="primary"):
+        # Doğru argümanlar ile fonksiyon çağrısı
         oneriler = en_uygun_adaylari_bul(
             hedef_gemi=hedef_gemi,
             gemi_makinesi=gemi_makinesi,
@@ -177,16 +177,13 @@ with col2:
             st.success(f"**{hedef_gemi}** gemisi için en uygun {len(oneriler)} aday listelenmiştir:")
             st.dataframe(oneriler, use_container_width=True, hide_index=True)
 
-            # Ordino Atama ve Excel Çıktısı Üretme
             st.markdown("---")
             st.subheader("3. Ordino Onayı ve Dışa Aktarım")
             secilen_ikame = st.selectbox("Gemiye Gönderilecek Personeli Seçin:", oneriler["Personel"].tolist())
             
             if st.button("Güncel Ordino Raporunu Excel Olarak İndir"):
-                # Çıktı Excel dosyası oluştur
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    # Atama özet tablosu
                     rapor_df = pd.DataFrame([{
                         "Planlama Tarihi": plan_tarihi.strftime("%Y-%m-%d"),
                         "İzin Alan Personel": izinli_kisi,
