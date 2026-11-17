@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import io
 
 st.set_page_config(page_title="Gemi Yağcı Ordino Planlayıcı", layout="wide")
@@ -11,7 +11,7 @@ GUNLER = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", 
 st.title("🚢 Gemi Yağcı Ordino & İkame Planlayıcı (Dinamik Excel Yükleme)")
 st.markdown("Kendi Excel dosyanızı yükleyerek kurallara en uygun 4 ikame personeli listeleyebilir ve güncel ordino planını Excel olarak indirebilirsiniz.")
 
-# --- KENAR ÇUCUĞU: EXCEL DOSYA YÜKLEME ---
+# --- KENAR ÇUBUĞU: EXCEL DOSYA YÜKLEME ---
 st.sidebar.header("📁 Veri Yönetimi")
 uploaded_file = st.sidebar.file_uploader(
     "Excel Dosyanızı Yükleyin (.xlsx)", 
@@ -78,8 +78,8 @@ else:
     personel_df, vardiya_df, gecmis_df = load_data_from_buffer(io.BytesIO(default_buffer))
     st.sidebar.info("💡 Örnek verilerle çalışılıyor (kendi dosyanızı yükleyebilirsiniz).")
 
-# --- ALGORİTMA: EN UYGUN 4 ADAYI BUL (Parametreler sabitlendi) ---
-def en_uygun_adaylari_bul(hedef_gemi, gerekli_makine, tarih_str):
+# --- ALGORİTMA: EN UYGUN 4 ADAYI BUL (gemi_makinesi parametresi eklendi) ---
+def en_uygun_adaylari_bul(hedef_gemi, gemi_makinesi, tarih_str):
     secilen_tarih = datetime.strptime(tarih_str, "%Y-%m-%d")
     gun_adi = GUNLER[secilen_tarih.weekday()]
     
@@ -96,7 +96,7 @@ def en_uygun_adaylari_bul(hedef_gemi, gerekli_makine, tarih_str):
             continue
 
         # 2. KURAL: Makine Bilgisi Eşleşmesi
-        if gerekli_makine.lower() not in bildigi_makineler:
+        if gemi_makinesi.lower() not in bildigi_makineler:
             continue
 
         # 3. KURAL: Haftalık İzin Kontrolü
@@ -108,7 +108,7 @@ def en_uygun_adaylari_bul(hedef_gemi, gerekli_makine, tarih_str):
         if cekilmis_mi:
             continue
 
-        # 5. KURAL: Günlük Durum Kontrolü (İzinde veya Vardiya Çıkışında olmayacak)
+        # 5. KURAL: Günlük Durum Kontrolü (İzinde, Vardiya Çıkışında veya Haftalık İzinde olmayacak)
         gunluk_kayit = vardiya_df[(vardiya_df["Personel"].astype(str) == ad) & (vardiya_df["Tarih"].astype(str) == tarih_str)]
         durum = "Müsait"
         if not gunluk_kayit.empty:
@@ -164,7 +164,7 @@ with col1:
 with col2:
     st.subheader("2. Önerilen En Uygun 4 Aday")
     if st.button("Uygun Personelleri Bul", type="primary"):
-        # Doğru argümanlar ile fonksiyon çağrısı
+        # Eksiksiz argüman seti ile fonksiyon çağrısı
         oneriler = en_uygun_adaylari_bul(
             hedef_gemi=hedef_gemi,
             gemi_makinesi=gemi_makinesi,
