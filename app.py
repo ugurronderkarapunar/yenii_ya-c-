@@ -184,4 +184,89 @@ def en_uygun_adaylari_bul(hedef_gemi, tarih_str):
             "Personel": ad,
             "Sicil No": row["Sicil_No"],
             "Statü": statu,
-            "Vardiya Tipi": row
+            "Vardiya Tipi": row["Vardiya_Tipi"],
+            "Haftalık İzin": haftalik_izin,
+            "O Günkü Durum": durum,
+            "Uygunluk Puanı": puan,
+            "Seçim Nedeni": " | ".join(aciklama)
+        })
+
+    sonuc_df = pd.DataFrame(adaylar)
+    if not sonuc_df.empty:
+        sonuc_df = sonuc_df.sort_values(by="Uygunluk Puanı", ascending=False).head(4)
+    return sonuc_df, gemi_makinesi
+
+# --- ARAYÜZ ---
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    st.subheader("1. İzin / Eksik Bilgisi")
+    izinli_kisi = st.selectbox("İzin Alan Personel", personel_df["Ad_Soyad"].tolist())
+    kisi_bilgi = personel_df[personel_df["Ad_Soyad"] == izinli_kisi].iloc[0]
+    
+    # Personelin ait olduğu gemiyi bulmaya çalışalım veya seçelim
+    hedef_gemi = st.selectbox("İzin Alınan Gemi", gemiler_df["Gemi_Adi"].tolist())
+    plan_tarihi = st.date_input("Planlama Tarihi", value=datetime.now())
+    
+    st.info(f"**Sicil No:** {kisi_bilgi['Sicil_No']} | **Statü:** {kisi_bilgi['Statu']} | **Hafta İzni:** {kisi_bilgi['Haftalik_Izin']}")
+
+with col2:
+    st.subheader("2. Kurallara Uygun En İyi 4 İkame Adayı")
+    if st.button("Adayları Filtrele ve Listele", type="primary"):
+        oneriler, gemi_makinesi = en_uygun_adaylari_bul(
+            hedef_gemi=hedef_gemi,
+            tarih_str=plan_tarihi.strftime("%Y-%m-%d")
+        )
+        
+        st.write(f"⚙️ **Gemi Makine Altyapısı:** {gemi_makinesi}")
+        
+        if oneriler.empty:
+            st.error("Tüm kurallara (İzinde olmama, hafta izni çakışmama, geçmişte o gemide çalışma ve kaptan raporu olmama) uyan uygun personel bulunamadı!")
+        else:
+            st.success(f"**{hedef_gemi}** gemisi için en uygun {len(oneriler)} aday:")
+            st.dataframe(oneriler, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            st.subheader("3. Ordino Onayı ve Rapor İndir")
+            secilen_ikame = st.selectbox("Görevlendirilecek Personel:", oneriler["Personel"].tolist())
+            
+            if st.button("Ordinoyu Onayla ve Excel İndir"):
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    rapor_df = pd.DataFrame([{
+                        "Tarih": plan_tarihi.strftime("%Y-%m-%d"),
+                        "İzin Alan": izinli_kisi,
+                        "Gemi": hedef_gemi,
+                        "Makine": gemi_makinesi,
+                        "Atanan İkame": secilen_ikame,
+                        "Onay Durumu": "Kesinleşti"
+                    }])
+                    rapor_df.to_excel(writer, sheet_name="Atama_Sonucu", index=False)
+                    oneriler.to_excel(writer, sheet_name="Uygun_Adaylar", index=False)
+                    personel_df.to_excel(writer, sheet_name="Guncel_Personel", index=False)
+                
+                processed_data = output.getvalue()
+                
+                st.download_button(
+                    label="📥 Ordino Excel Raporunu İndir (.xlsx)",
+                    data=processed_data,
+                    file_name=f"Ordino_{plan_tarihi.strftime('%Y%m%d')}_{hedef_gemi}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                st.success(f"✅ {secilen_ikame}, {hedef_gemi} gemisi için başarıyla atandı!")
+
+st.divider()
+with st.expander("📊 Tüm Excel Sayfalarını Görüntüle"):
+    t1, t2, t3, t4, t5, t6 = st.tabs(["Personel", "Gemiler & Makineler", "Vardiya ve İzin", "Gemi Geçmişi", "Raporlar/Cezalar", "Kaptan/Baş Makinist"])
+    with t1:
+        st.dataframe(personel_df, use_container_width=True)
+    with t2:
+        st.dataframe(gemiler_df, use_container_width=True)
+    with t3:
+        st.dataframe(vardiya_df, use_container_width=True)
+    with t4:
+        st.dataframe(gemi_gecmisi_df, use_container_width=True)
+    with t5:
+        st.dataframe(raporlar_df, use_container_width=True)
+    with t6:
+        st.dataframe(pd.read_excel(uploaded_file if uploaded_file else io.BytesIO(default_buffer), sheet_name="Gemi_Kaptan_Bas_Mak"), use_container_width=True)
